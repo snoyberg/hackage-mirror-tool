@@ -183,7 +183,7 @@ main2 Opts{..} S3Cfg{..} = handle pure $ do
         do tmp <- readStrictByteString (repoCacheDir </> indexTarFn)
            syncFile objmap tmp (pathToObjKey indexTarFn) c
 
-        forM_ (fragment "00-index.tar.gz" : jsonFiles) $ \fn -> do
+        forM_ jsonFiles $ \fn -> do
             tmp <- readStrictByteString (repoCacheDir </> fn)
             syncFile objmap tmp (pathToObjKey fn) c
 
