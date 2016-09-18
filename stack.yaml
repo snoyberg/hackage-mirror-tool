@@ -1,0 +1,6 @@
+resolver: lts-7.0
+extra-deps:
+- cryptohash-md5-0.11.100.1
+- cryptohash-sha1-0.11.100.1
+- hackage-security-HTTP-0.1.1
+

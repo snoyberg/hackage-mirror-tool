@@ -30,6 +30,7 @@ import qualified Data.ByteString.Char8    as BC8
 -- import           Data.ByteString.Lazy (toStrict,fromStrict)
 import qualified Data.ByteString.Short    as BSS
 import qualified Data.HashMap.Strict      as HM
+import           Data.Semigroup         ((<>))
 import           Data.String
 import           Data.Time                (UTCTime)
 import           Data.Time.Clock          (getCurrentTime)

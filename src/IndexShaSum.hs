@@ -21,6 +21,7 @@ import qualified Data.ByteString        as BS
 import qualified Data.ByteString.Lazy   as BSL
 import qualified Data.ByteString.Short  as BSS
 import qualified Data.HashMap.Strict    as HM
+import           Data.Semigroup         ((<>))
 import           Data.Set               (Set)
 import qualified Data.Set               as Set
 import           Data.String

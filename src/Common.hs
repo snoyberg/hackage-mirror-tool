@@ -25,7 +25,7 @@ import qualified Crypto.Hash.SHA256         as SHA256
 import           Data.ByteString            (ByteString)
 import qualified Data.ByteString            as BS
 import qualified Data.ByteString.Base16     as B16
-import           Data.Semigroup
+import           Data.Semigroup hiding ((<>))
 -- import           Data.ByteString.Lazy (toStrict,fromStrict)
 import           Data.ByteString.Short      (ShortByteString, fromShort,
                                              toShort)
