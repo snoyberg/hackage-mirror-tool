@@ -15,6 +15,7 @@ import           Control.Monad
 import qualified Data.ByteString          as BS
 -- import           Data.ByteString.Lazy (toStrict,fromStrict)
 import qualified Data.ByteString.Short    as BSS
+import           Data.Foldable            (sequenceA_)
 import qualified Data.HashMap.Strict      as HM
 import           Data.String
 import           Data.Time.Clock.POSIX    (getPOSIXTime)
@@ -169,13 +170,11 @@ main2 Opts{..} S3Cfg{..} = handle pure $ do
     idxQ <- newMVar idx
 
     -- fire up some workers...
-    workers <- forM [1.. optMaxConns] $ \n -> async $ do
-        bracket (establishConnection s3cfgBaseUrl) closeConnection $
-            worker idxQ objmap n
+    runConcurrently $ sequenceA_ $
+        flip map [1.. optMaxConns] $ \n -> Concurrently $
+            bracket (establishConnection s3cfgBaseUrl) closeConnection $
+                worker idxQ objmap n
 
-    forM_ workers link
-
-    forM_ workers wait
     logMsg INFO "workers finished..."
 
     -- update meta-data last...
@@ -184,7 +183,7 @@ main2 Opts{..} S3Cfg{..} = handle pure $ do
         do tmp <- readStrictByteString (repoCacheDir </> indexTarFn)
            syncFile objmap tmp (pathToObjKey indexTarFn) c
 
-        forM_ jsonFiles $ \fn -> do
+        forM_ (fragment "00-index.tar.gz" : jsonFiles) $ \fn -> do
             tmp <- readStrictByteString (repoCacheDir </> fn)
             syncFile objmap tmp (pathToObjKey fn) c
 
