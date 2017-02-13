@@ -12,7 +12,7 @@ export S3_SECRET_KEY=$AWS_SECRET_ACCESS_KEY
 
 while true
 do
-    timeout -k5 15m /usr/local/bin/hackage-mirror-tool +RTS -t -A2M -M256M -RTS \
+    timeout -k5 15m /usr/local/bin/hackage-mirror-tool +RTS -t -A2M -M512M -RTS \
       --hackage-url      $HACKAGE_URL \
       --hackage-pkg-url  $HACKAGE_URL/package/ \
       --s3-base-url      https://s3.amazonaws.com \
