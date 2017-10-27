@@ -182,4 +182,5 @@ brokenEntries = force [ IndexShaEntry k s256 m5 s | (k,s256,m5,s) <- tab ]
           , ("gogol-admin-reports-0.2.0.tar.gz"   , "d49e18a038ad1321c1d5de90e6e3b7bdb26f945947ee674dd4679c9a6521afad" , "9ee8804d7a92312e5ce200972b0c6e27",  17792)
           , ("wai-middleware-prometheus-0.2.0.tar.gz"
                                                   , "7d1bb7c835a7dfaf5bff64940d4215c5108404411e9deac2205c32ac0dcdb3c1" , "83b573a3b1d9eca4c6f9ae2fad75cf11",   6586)
+          , ("aivika-transformers-5.3.1.tar.gz"   , "4f932018edf683641607ad83ad3e401c26a8e6a38f0fde011bf1a9dcb3f8cfad" , "35437775ab770195701d1473d8af2ecd", 183816)
           ]
