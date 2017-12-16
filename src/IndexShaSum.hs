@@ -183,4 +183,5 @@ brokenEntries = force [ IndexShaEntry k s256 m5 s | (k,s256,m5,s) <- tab ]
           , ("wai-middleware-prometheus-0.2.0.tar.gz"
                                                   , "7d1bb7c835a7dfaf5bff64940d4215c5108404411e9deac2205c32ac0dcdb3c1" , "83b573a3b1d9eca4c6f9ae2fad75cf11",   6586)
           , ("aivika-transformers-5.3.1.tar.gz"   , "4f932018edf683641607ad83ad3e401c26a8e6a38f0fde011bf1a9dcb3f8cfad" , "35437775ab770195701d1473d8af2ecd", 183816)
+          , ("llvm-hs-5.1.1.tar.gz"               , "38295782fea649ee0dae78bfa348d63b0ff06da7aee9a454eb6f2608ca4a533e" , "fe23857edc84dc760f2e45678a070eab", 128370)
           ]
