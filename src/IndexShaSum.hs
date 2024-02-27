@@ -9,7 +9,6 @@
 --
 module IndexShaSum
     ( run
-    , unFlat
     , IndexShaEntry(..)
     , IndexShaSumOptions(..)
     ) where
@@ -92,17 +91,6 @@ run (IndexShaSumOptions {..}) = do
       where
         fn = Tar.entryPath e
 
--- | Convert to non-flat layout (i.e. @<name>/<ver>/<name>-<ver>.tar.gz@)
-unFlat :: SrcTarName -> SrcTarName
-unFlat fn0 = BSS.toShort $ mconcat [pn <> "-" <> pv <> "/" <> fn0']
-  where
-    fn0' = BSS.fromShort fn0
-
-    Just base = stripSuffixBS ".tar.gz" fn0'
-
-    (pn_, pv) = BS.spanEnd (\c -> (c >= 0x30 && c <= 0x3a) || c == 0x2e) base
-    Just (pn, 0x2d) = BS.unsnoc pn_
-
 -- | Read tarball lazily (and possibly decompress)
 readTarEntries :: FsRoot root => Path root -> IO [Tar.Entry]
 readTarEntries idxtar = do
@@ -148,13 +136,6 @@ stripPrefixBS :: ByteString -> ByteString -> Maybe ByteString
 stripPrefixBS pfx b
   | BS.isPrefixOf pfx b = Just $ BS.drop (BS.length pfx) b
   | otherwise           = Nothing
-
-
-stripSuffixBS :: ByteString -> ByteString -> Maybe ByteString
-stripSuffixBS sfx b
-  | BS.isSuffixOf sfx b = Just $ BS.take (BS.length b - BS.length sfx) b
-  | otherwise           = Nothing
-
 
 
 -- | Blacklisted entries
