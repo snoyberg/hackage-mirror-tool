@@ -124,7 +124,7 @@ s3ListObjectsFolder s3cfg c = do
     pure $! HM.fromList . map (\obj->(omiKey obj,obj)) $ objs
 
 s3ListObjects1 :: S3Cfg -> Connection -> ObjKey -> Maybe ObjKey -> Bool -> IO (Bool,[ObjMetaInfo])
-s3ListObjects1 (s3cfg@S3Cfg {..}) c pfx marker recurse = do
+s3ListObjects1 (s3cfg@S3Cfg {}) c pfx marker recurse = do
     now <- formatRFC1123 <$> getCurrentTime
 
     let q = buildRequest1 $
@@ -163,7 +163,7 @@ s3ListObjects1 (s3cfg@S3Cfg {..}) c pfx marker recurse = do
         | otherwise = "?" <> BC8.intercalate "&" qryparms
 
 s3PutObject :: S3Cfg -> Connection -> ByteString -> ObjKey -> IO ()
-s3PutObject (s3cfg@S3Cfg {..}) c objdata objkey = do
+s3PutObject (s3cfg@S3Cfg {}) c objdata objkey = do
     now <- formatRFC1123 <$> getCurrentTime
 
     let q = buildRequest1 $ do

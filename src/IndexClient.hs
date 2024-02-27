@@ -82,3 +82,6 @@ updateIndex hackageUri cacheDir = do
             LogSelectedMirror    {} -> INFO
             LogUpdating          {} -> INFO
             LogVerificationError {} -> ERROR
+            LogLockWait          {} -> DEBUG
+            LogLockWaitDone      {} -> DEBUG
+            LogUnlock            {} -> DEBUG

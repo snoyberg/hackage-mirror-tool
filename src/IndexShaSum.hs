@@ -20,11 +20,12 @@ import qualified Codec.Compression.GZip as GZip
 import           Control.DeepSeq
 import           Control.Monad
 import qualified Data.Aeson             as J
+import qualified Data.Aeson.KeyMap      as J
+import qualified Data.Aeson.Key         as J
 import qualified Data.Aeson.Types       as J
 import qualified Data.ByteString        as BS
 import qualified Data.ByteString.Lazy   as BSL
 import qualified Data.ByteString.Short  as BSS
-import qualified Data.HashMap.Strict    as HM
 import           Data.List
 import qualified Data.Map.Strict        as Map
 import           Data.Set               (Set)
@@ -122,8 +123,8 @@ decodePkgJsonFile bs = do
             targets  <- signed J..: "targets"
             J.withObject "PackageJson.signed.targets" go2 targets
 
-        go2 m = forM (HM.toList m) $ \(k,v) -> do
-            J.withObject ".targets{}" (go3 k) v
+        go2 m = forM (J.toList m) $ \(k,v) -> do
+            J.withObject ".targets{}" (go3 (J.toText k)) v
 
         go3 k o = do
             hashes <- o      J..: "hashes"
