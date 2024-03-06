@@ -2,6 +2,8 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Use &&" #-}
 
 -- |
 -- Copyright : Herbert Valerio Riedel
@@ -11,6 +13,14 @@ module Main where
 
 import           Common
 
+import           Control.Lens
+import           Conduit
+import qualified Amazonka
+import qualified Amazonka.Auth
+import           Amazonka.Data (toText)
+import qualified Amazonka.S3
+import           Amazonka.S3.ListObjectsV2
+import           Amazonka.S3.Types.Object
 import           Control.Concurrent.Async
 import           Control.Concurrent.MVar
 import           Control.Exception
@@ -19,15 +29,17 @@ import qualified Data.ByteString          as BS
 import qualified Data.ByteString.Short    as BSS
 import qualified Data.HashMap.Strict      as HM
 import           Data.String
+import qualified Data.Text                as T
+import qualified Data.Text.Encoding       as T
 import           Data.Time.Clock.POSIX    (getPOSIXTime)
 import           Network.Http.Client
 import           Options.Applicative      as OA
 import           System.Environment       (getEnv)
+import           Text.Read (readMaybe)
 
 import           IndexClient
 import           IndexShaSum              (IndexShaEntry (..))
 import qualified IndexShaSum
-import           SimpleS3
 import           System.Exit
 
 ----------------------------------------------------------------------------
@@ -56,7 +68,7 @@ data Opts = Opts
     , optHackageUrl    :: String
     , optHackagePkgUrl :: String
     , optS3BaseUrl     :: String
-    , optS3BucketId    :: String
+    , optS3BucketId    :: Amazonka.S3.BucketName
     , optMaxConns      :: Word
     }
 
@@ -79,8 +91,8 @@ getOpts = execParser opts
                      <*> strOption (long "s3-base-url" <> value "https://objects-us-west-1.dream.io"
                                     <> metavar "URL"
                                     <> help "Base URL of S3 mirror bucket" <> showDefault)
-                     <*> strOption (long "s3-bucket-id" <> value "hackage-mirror"
-                                    <> help "id of S3 mirror bucket" <> showDefault)
+                     <*> (Amazonka.S3.BucketName . T.pack <$> strOption (long "s3-bucket-id" <> value "hackage-mirror"
+                                    <> help "id of S3 mirror bucket" <> showDefault))
                      <*> OA.option auto (long "max-connections" <> metavar "NUM" <> value 1
                                     <> help "max concurrent download connections" <> showDefault)
 
@@ -93,11 +105,15 @@ main = do
     Opts{..} <- getOpts
 
     let s3cfgBaseUrl   = fromString optS3BaseUrl
-        s3cfgBucketId  = fromString optS3BucketId
     s3cfgAccessKey <- fromString <$> getEnv "S3_ACCESS_KEY"
     s3cfgSecretKey <- fromString <$> getEnv "S3_SECRET_KEY"
 
-    try (main2 (Opts{..}) (S3Cfg{..})) >>= \case
+    awsEnv <- do
+        e <- Amazonka.newEnv (pure . Amazonka.Auth.fromKeys s3cfgAccessKey s3cfgSecretKey)
+        let s3 = Amazonka.setEndpoint True s3cfgBaseUrl 443 Amazonka.S3.defaultService
+        pure $ Amazonka.configureService s3 e
+
+    try (main2 (Opts{..}) awsEnv optS3BucketId) >>= \case
         Left e   -> do
             logMsg CRITICAL ("exception: " ++ displayException (e::SomeException))
             exitFailure
@@ -108,8 +124,14 @@ main = do
             logMsg ERROR ("exiting (code = " ++ show rc ++ ")")
             exitWith (ExitFailure rc)
 
-main2 :: Opts -> S3Cfg -> IO ExitCode
-main2 Opts{..} S3Cfg{..} = handle pure $ do
+pathToObjKey :: Path Unrooted -> Amazonka.S3.ObjectKey
+pathToObjKey = Amazonka.S3.ObjectKey . T.pack . toUnrootedFilePath
+
+sbsToObjKey :: ShortByteString -> Amazonka.S3.ObjectKey
+sbsToObjKey = Amazonka.S3.ObjectKey . T.decodeUtf8 . BSS.fromShort
+
+main2 :: Opts -> Amazonka.Env -> Amazonka.S3.BucketName -> IO ExitCode
+main2 Opts{..} awsEnv bucketId = handle pure $ do
     when optDryMode $
         logMsg WARNING "--dry mode active"
 
@@ -133,7 +155,10 @@ main2 Opts{..} S3Cfg{..} = handle pure $ do
 
     -- check meta-data files first to detect if anything needs to be done
     logMsg INFO "fetching meta-data file objects from S3..."
-    metafiles <- bracket (establishConnection s3cfgBaseUrl) closeConnection $ s3ListObjectsFolder (S3Cfg{..})
+    -- Meta files are the ones at the top level of the hierarchy, which is what
+    -- this query returns.
+    let getMetaFiles = newListObjectsV2 bucketId & listObjectsV2_delimiter ?~ '/'
+    metafiles <- sinkObjectMap awsEnv getMetaFiles
     metadirties <- forM jsonFiles $ \fn -> do
         objdat <- readStrictByteString (repoCacheDir </> fn)
 
@@ -142,7 +167,7 @@ main2 Opts{..} S3Cfg{..} = handle pure $ do
             objkey  = pathToObjKey fn
         let dirty = case HM.lookup objkey metafiles of
                 Nothing -> True
-                Just (OMI {..}) -> not (omiMD5 == obj_md5 && omiSize == obj_sz)
+                Just (omiMD5, omiSize) -> not (omiMD5 == obj_md5 && omiSize == obj_sz)
 
         pure dirty
 
@@ -151,8 +176,7 @@ main2 Opts{..} S3Cfg{..} = handle pure $ do
         logMsg INFO "meta-data files are synced and '--force-sync' was not given; nothing to do"
         exitSuccess
 
-    ----------------------------------------------------------------------------
-    -- dirty meta-files detected, do full sync
+    logMsg INFO "Dirty meta-files detected, doing full sync."
 
     (idx,missing) <- IndexShaSum.run (IndexShaSum.IndexShaSumOptions True (repoCacheDir </> indexTarFn) Nothing)
     let idxBytes = sum [ fromIntegral sz | IndexShaEntry _ _ _ sz <- idx, sz >= 0 ] :: Word64
@@ -163,32 +187,25 @@ main2 Opts{..} S3Cfg{..} = handle pure $ do
     logMsg INFO ("Hackage index contains " <> show (length idx) <> " src-tarball entries (" <> show idxBytes <> " bytes)")
 
     logMsg INFO "Listing all S3 objects (may take a while) ..."
-    objmap <- s3ListAllObjects (S3Cfg{..})
+    bucketObjects <- sinkObjectMap awsEnv (newListObjectsV2 bucketId)
 
-    let s3cnt = length (filter isSrcTarObjKey (HM.keys objmap))
-    logMsg INFO ("S3 index contains " <> show s3cnt <> " src-tarball entries (total " <> show (HM.size objmap) <> ")")
+    let s3cnt = length (filter isSrcTarObjKey (HM.keys bucketObjects))
+    logMsg INFO ("S3 index contains " <> show s3cnt <> " src-tarball entries (total " <> show (HM.size bucketObjects) <> ")")
 
     idxQ <- newMVar idx
 
     -- fire up some workers...
-    workers <- forM [1.. optMaxConns] $ \n -> async $ do
-        bracket (establishConnection s3cfgBaseUrl) closeConnection $
-            worker idxQ objmap n
-
-    forM_ workers link
-
-    forM_ workers wait
+    mapConcurrently_ (worker idxQ bucketObjects awsEnv) [1..optMaxConns]
     logMsg INFO "workers finished..."
 
     -- update meta-data last...
-    bracket (establishConnection s3cfgBaseUrl) closeConnection $ \c -> do
-        -- this one can take ~1 minute; so we need to update this first
-        do tmp <- readStrictByteString (repoCacheDir </> indexTarFn)
-           syncFile objmap tmp (pathToObjKey indexTarFn) c
+    -- this one can take ~1 minute; so we need to update this first
+    do tmp <- readStrictByteString (repoCacheDir </> indexTarFn)
+       syncFile bucketObjects tmp (pathToObjKey indexTarFn) awsEnv
 
-        forM_ jsonFiles $ \fn -> do
-            tmp <- readStrictByteString (repoCacheDir </> fn)
-            syncFile objmap tmp (pathToObjKey fn) c
+    forM_ jsonFiles $ \fn -> do
+        tmp <- readStrictByteString (repoCacheDir </> fn)
+        syncFile bucketObjects tmp (pathToObjKey fn) awsEnv
 
     logMsg INFO "sync job completed"
 
@@ -197,46 +214,45 @@ main2 Opts{..} S3Cfg{..} = handle pure $ do
 
     return ExitSuccess
   where
-    isSrcTarObjKey k =
-        and [ BS.isPrefixOf "package/" k'
-            , BS.isSuffixOf ".tar.gz" k'
-            , BS.count 0x2f k' == 1
+    isSrcTarObjKey (Amazonka.S3.ObjectKey k') =
+        and [ T.isPrefixOf "package/" k'
+            , T.isSuffixOf ".tar.gz" k'
+            , T.count "/" k' == 1
             ]
-      where
-        k' = BSS.fromShort k
 
 
-    s3PutObject' :: Connection -> Word -> ByteString -> ObjKey -> IO ()
-    s3PutObject' conn thrId objdat objkey = do
+    s3PutObject' :: Amazonka.Env -> Word -> ByteString -> Amazonka.S3.ObjectKey -> IO ()
+    s3PutObject' env thrId objdat objkey = do
         t0 <- getPOSIXTime
         if optDryMode
             then logMsg WARNING "no-op due to --dry"
-            else s3PutObject (S3Cfg{..}) conn objdat objkey
+            else void $ runResourceT $ Amazonka.send env putObj
         t1 <- getPOSIXTime
         logMsg DEBUG ("PUT completed; thr=" <> show thrId <> " dt=" ++ show (t1-t0))
+      where
+        putObj = Amazonka.S3.newPutObject bucketId objkey (Amazonka.toBody objdat)
 
 
-    syncFile objmap objdat objkey conn = do
+    syncFile bucketObjects objdat objkey conn = do
         let obj_md5 = md5hash objdat
             obj_sz  = BS.length objdat
-        let dirty = case HM.lookup objkey objmap of
+        let dirty = case HM.lookup objkey bucketObjects of
                 Nothing -> True
-                Just (OMI {..}) -> not (omiMD5 == obj_md5 && omiSize == obj_sz)
+                Just (omiMD5, omiSize) -> not (omiMD5 == obj_md5 && omiSize == obj_sz)
         if dirty
            then logMsg INFO  (show objkey ++ " needs sync")
            else logMsg DEBUG (show objkey ++ " is up-to-date")
 
         when dirty $ s3PutObject' conn 0 objdat objkey
 
-        return ()
 
-
-    worker idxQ objmap thrId conn = do
-        tmp <- modifyMVar idxQ (pure . popQ)
-        case tmp of
+    worker idxQ bucketObjects conn thrId = do
+        indexEntry <- modifyMVar idxQ (pure . popQ)
+        case indexEntry of
             Nothing -> return () -- queue empty, terminate worker
             Just (IndexShaEntry pkg s256 m5 sz) -> do
-                case (HM.lookup ("package/" <> pkg) objmap) of
+                let key = sbsToObjKey ("package/" <> pkg)
+                case HM.lookup key bucketObjects of
                     Nothing -> do -- miss
                         resp <- getSourceTarball (fromString optHackagePkgUrl) pkg
                         case resp of
@@ -251,22 +267,43 @@ main2 Opts{..} S3Cfg{..} = handle pure $ do
                                 unless (m5 == m5') $
                                     fail "md5 mismatch"
 
-                                s3PutObject' conn thrId pkgdat ("package/" <> pkg)
+                                s3PutObject' conn thrId pkgdat key
 
                             Left _ -> logMsg WARNING "**skipping**" -- TODO: collect
 
 
-                    Just (OMI {..}) -> do -- hit
+                    Just bucketObject@(omiMD5, _) -> do -- hit
                         if omiMD5 == m5
                             then pure () -- OK
                             else do
                               logMsg CRITICAL "MD5 corruption"
-                              fail ("MD5 corruption " ++ show tmp ++ "  " ++ show (OMI{..}))
+                              fail ("MD5 corruption " ++ show indexEntry ++ "  " ++ show bucketObject)
                         return ()
                 -- loop
-                worker idxQ objmap thrId conn
+                worker idxQ bucketObjects conn thrId
       where
         popQ []     = ([],Nothing)
         popQ (x:xs) = (xs, Just x)
+
+sinkObjectMap :: Amazonka.Auth.Env -> ListObjectsV2 -> IO (HashMap Amazonka.S3.ObjectKey (MD5Val, Int))
+sinkObjectMap awsEnv query = runResourceT $ runConduit
+    $ Amazonka.paginate awsEnv query
+    .| mapC (^. listObjectsV2Response_contents)
+    .| concatMapC (fromMaybe [])
+    .| foldMapC objectToHMap
+
+-- | The MD5Val comes from the Object's ETag, although that isn't guaranteed to
+-- be an MD5 sum! IMHO we should not be using it as a hash but as an opaque
+-- value that simply changes whenever the contents of the object change.
+-- Comparing it against our own calculated hash, which we do above, is certain
+-- to run into issues eventually.
+objectToHMap :: Object -> HM.HashMap Amazonka.S3.ObjectKey (MD5Val, Int)
+objectToHMap o =
+    HM.singleton
+        (o ^. object_key)
+        (fromMaybe md5zero
+            ( (md5unhex <=< readMaybe)
+                (T.unpack (toText (Amazonka.S3.fromETag (o ^. object_eTag)))))
+            , fromIntegral (o ^. object_size))
 
 ----------------------------------------------------------------------------
