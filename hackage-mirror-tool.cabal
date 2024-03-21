@@ -47,7 +47,7 @@ executable hackage-mirror-tool
                        IndexShaSum
 
   build-depends:
-    aeson ^>=2.2.1,
+    aeson ^>=2.1.2.1 || ^>=2.2.1,
     -- Force reliance on our patched amazonka-core by setting amazonka >2.0. See
     -- cabal.project in source repo. Once updated, we can set this properly.
     amazonka >2.0,
@@ -69,7 +69,7 @@ executable hackage-mirror-tool
     lens ^>=5.2.3,
     network-uri ^>=2.6.4,
     optparse-applicative ^>=0.17.1,
-    tar ^>=0.6.1,
+    tar ^>=0.5.1.1 || ^>=0.6.1,
     text ^>=2.0.2,
     time ^>=1.12.2,
     unix ^>=2.7.3,
