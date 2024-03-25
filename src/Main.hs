@@ -20,6 +20,7 @@ import qualified Amazonka.Auth
 import           Amazonka.Data (toText)
 import qualified Amazonka.S3
 import           Amazonka.S3.ListObjectsV2
+import           Amazonka.S3.PutObject
 import           Amazonka.S3.Types.Object
 import           Control.Concurrent.Async
 import           Control.Concurrent.MVar
@@ -230,7 +231,25 @@ main2 Opts{..} awsEnv bucketId = handle pure $ do
         t1 <- getPOSIXTime
         logMsg DEBUG ("PUT completed; thr=" <> show thrId <> " dt=" ++ show (t1-t0))
       where
-        putObj = Amazonka.S3.newPutObject bucketId objkey (Amazonka.toBody objdat)
+        objkeyTxt = objkey ^. Amazonka.S3._ObjectKey
+        ctype = case () of
+            -- While suspect, these choices are copied faithfully from earlier
+            -- versions of this tool.
+            -- Suspicions:
+            -- 1) x-gzip should probably be a Content-Encoding instead of
+            --    Content-Type. (At the very least, it should be
+            --    application/gzip, per https://www.rfc-editor.org/rfc/rfc6713.)
+            --    See https://www.rfc-editor.org/rfc/rfc9110#name-content-encoding .
+            -- 2) application/binary should really be application/octet-stream.
+            --    The latter is the standardized name for "any old thing".
+            --    See https://www.rfc-editor.org/rfc/rfc2046#section-4.5.1 .
+            _ | ".gz"   `T.isSuffixOf` objkeyTxt -> "application/x-gzip"
+            _ | ".json" `T.isSuffixOf` objkeyTxt -> "application/json"
+            _ -> "application/binary"
+        putObj =
+            Amazonka.S3.newPutObject bucketId objkey (Amazonka.toBody objdat)
+                & putObject_contentType ?~ ctype
+
 
 
     syncFile bucketObjects objdat objkey conn = do
