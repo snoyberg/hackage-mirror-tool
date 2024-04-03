@@ -4,3 +4,4 @@
 /dist/
 /index-cache/
 .stack-work/
+/.ghc.environment.*

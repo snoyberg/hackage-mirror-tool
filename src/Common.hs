@@ -1,6 +1,10 @@
 {-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
+-- |
+-- Copyright : Herbert Valerio Riedel
+-- License   : GPLv3
+--
 module Common
     ( module Common
     , module Control.Applicative
@@ -31,6 +35,7 @@ import           Data.ByteString.Short      (ShortByteString, fromShort,
                                              toShort)
 import           Data.Hashable
 import qualified Data.HashMap.Strict        as HM
+import           Data.Int
 import           Data.Maybe
 import           Data.Proxy
 import           Data.String
@@ -39,14 +44,13 @@ import           Data.Time.Clock            (getCurrentTime)
 import           Data.Time.Format           (defaultTimeLocale)
 import qualified Data.Time.Format           as DT
 import           Data.Word
-import           Data.Int
 import           Hackage.Security.Util.Path
 import           System.IO
 import           System.Posix.Process       (getProcessID)
 import           Text.Printf                (printf)
 
 newtype SHA256Val = SHA256Val ShortByteString
-                  deriving (Eq,Ord,Hashable,NFData)
+                  deriving (Eq,Ord,Hashable,NFData,Show)
 
 instance IsString SHA256Val where
     fromString = fromMaybe (error "invalid SHA256Val string-literal") . sha256unhex . fromString
@@ -68,9 +72,8 @@ sha256hex (SHA256Val x) = B16.encode (fromShort x)
 
 sha256unhex :: ByteString -> Maybe SHA256Val
 sha256unhex x = case B16.decode x of
-    (d, rest) | BS.null rest, BS.length d == 32
-                -> Just (SHA256Val (toShort d))
-    _           -> Nothing
+    Right d | BS.length d == 32 -> Just (SHA256Val (toShort d))
+    _ -> Nothing
 
 -- Special reserved 'SHA256Val'
 sha256zero :: SHA256Val
@@ -84,9 +87,8 @@ md5hex (MD5Val x) = B16.encode (fromShort x)
 
 md5unhex :: ByteString -> Maybe MD5Val
 md5unhex x = case B16.decode x of
-    (d, rest) | BS.null rest, BS.length d == 16
-                -> Just (MD5Val (toShort d))
-    _           -> Nothing
+    Right d | BS.length d == 16 -> Just (MD5Val (toShort d))
+    _ -> Nothing
 
 -- Special reserved 'SHA256Val'
 md5zero :: MD5Val

@@ -1,3 +1,7 @@
+-- |
+-- Copyright : Herbert Valerio Riedel
+-- License   : GPLv3
+--
 module IndexClient
     ( updateIndex
     , HasUpdates(..)
@@ -78,3 +82,6 @@ updateIndex hackageUri cacheDir = do
             LogSelectedMirror    {} -> INFO
             LogUpdating          {} -> INFO
             LogVerificationError {} -> ERROR
+            LogLockWait          {} -> DEBUG
+            LogLockWaitDone      {} -> DEBUG
+            LogUnlock            {} -> DEBUG
