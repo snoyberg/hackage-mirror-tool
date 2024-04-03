@@ -1,1 +1,10 @@
 packages: .
+
+-- Pre release version of amazonka-core that supports R2.
+source-repository-package
+    type: git
+    location: https://github.com/brendanhay/amazonka
+    tag: 85e0289f8dc23c54b00f7f1a09845be7e032a1eb
+    subdir: lib/amazonka-core
+
+allow-older: hackage-mirror-tool:amazonka
